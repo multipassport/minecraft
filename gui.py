@@ -1,7 +1,8 @@
-import tkinter as tk
 import asyncio
-from tkinter.scrolledtext import ScrolledText
+import tkinter as tk
 from enum import Enum
+from tkinter import messagebox
+from tkinter.scrolledtext import ScrolledText
 
 
 class TkAppClosed(Exception):
@@ -131,3 +132,23 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
         update_conversation_history(conversation_panel, messages_queue),
         update_status_panel(status_labels, status_updates_queue)
     )
+
+
+class InvalidTokenException(Exception):
+    def __init__(self, message: str = 'Invalid token received'):
+        self.message = message
+        super().__init__(message)
+
+
+async def update_error_box(queue):
+    root = tk.Tk()
+    root.withdraw()
+    root.after(0, root.destroy())
+    while True:
+        message = await queue.get()
+        if messagebox.showerror('Error', message):
+            root.destroy()
+
+
+async def show_message_box(queue):
+    await asyncio.gather(update_error_box(queue))
