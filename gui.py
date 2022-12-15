@@ -9,6 +9,12 @@ class TkAppClosed(Exception):
     pass
 
 
+class InvalidTokenException(Exception):
+    def __init__(self, message: str = 'Invalid token received'):
+        self.message = message
+        super().__init__(message)
+
+
 class ReadConnectionStateChanged(Enum):
     INITIATED = 'устанавливаем соединение'
     ESTABLISHED = 'соединение установлено'
@@ -134,21 +140,21 @@ async def draw(messages_queue, sending_queue, status_updates_queue):
     )
 
 
-class InvalidTokenException(Exception):
-    def __init__(self, message: str = 'Invalid token received'):
-        self.message = message
-        super().__init__(message)
-
-
 async def update_error_box(queue):
     root = tk.Tk()
     root.withdraw()
-    root.update()
-    root.after(1000, root.destroy())
+    root.after(1, root.destroy())
     while True:
         message = await queue.get()
         if messagebox.showerror('Error', message):
-            root.destroy()
+            destroy_root(root)
+
+
+def destroy_root(root: tk.Tk):
+    try:
+        root.destroy()
+    except tk.TclError:
+        raise InvalidTokenException()
 
 
 async def show_message_box(queue):

@@ -127,27 +127,28 @@ async def run_tasks(
         reader: StreamReader,
         writer: StreamWriter,
         config: Namespace,
+        chat_queue: ChatQueue,
 ):
     gui_task = gui.draw(
-        ChatQueue.messages,
-        ChatQueue.sending,
-        ChatQueue.status_updates,
+        chat_queue.messages,
+        chat_queue.sending,
+        chat_queue.status_updates,
     )
     receiving_messages_task = run_receiver_connection(
-        ChatQueue.messages,
-        ChatQueue.history,
+        chat_queue.messages,
+        chat_queue.history,
         config,
     )
     saving_history_task = save_messages(
-        ChatQueue.history,
+        chat_queue.history,
         config.history,
     )
     sending_messages_task = run_sender_connection(
         reader,
         writer,
-        ChatQueue.sending,
+        chat_queue.sending,
     )
-    error_task = gui.show_message_box(ChatQueue.errors)
+    error_task = gui.show_message_box(chat_queue.errors)
 
     await asyncio.gather(
         sending_messages_task,
@@ -172,9 +173,10 @@ async def main():
         config.sender_host,
         config.sender_port,
     )
+    chat_queue = ChatQueue()
 
-    await authorize(sender_reader, sender_writer, ChatQueue.errors, config.account_hash)
-    await run_tasks(sender_reader, sender_writer, config)
+    await authorize(sender_reader, sender_writer, chat_queue.errors, config.account_hash)
+    await run_tasks(sender_reader, sender_writer, config, chat_queue)
 
 
 if __name__ == '__main__':
