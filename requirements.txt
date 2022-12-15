@@ -1,0 +1,2 @@
+configargparse==1.5.3
+aiofiles==0.8.0
