@@ -26,11 +26,11 @@ class ChatQueue:
 
 def parse_cli_args() -> ArgumentParser:
     parser = ArgumentParser(default_config_files=['./chat_config.cfg'])
-    parser.add('--receiver_host', help='Chat host')
-    parser.add('--receiver_port', help='Chat port')
+    parser.add('--receiver_host', help='Receiver chat host')
+    parser.add('--receiver_port', help='Receiver chat port')
     parser.add('--history', help='Where to save chat history')
-    parser.add('--sender_host', help='Chat host')
-    parser.add('--sender_port', help='Chat port')
+    parser.add('--sender_host', help='Sender chat host')
+    parser.add('--sender_port', help='Sender chat port')
     parser.add('--nickname', help='Preferred nickname')
     parser.add('--account_hash', help='Account hash to login')
     return parser
@@ -96,7 +96,11 @@ async def authorize(
         queue.put_nowait('Неизвестный токен. Проверьте его или зарегистрируйте заново.')
 
 
-async def send_message(reader, writer, message):
+async def send_message(
+        reader: StreamReader,
+        writer: StreamWriter,
+        message: str,
+):
     escaped_message = fr'{message}'
     logger.debug(f'Sending message: \n\t{escaped_message}')
 
@@ -171,6 +175,7 @@ async def main():
 
     await authorize(sender_reader, sender_writer, ChatQueue.errors, config.account_hash)
     await run_tasks(sender_reader, sender_writer, config)
+
 
 if __name__ == '__main__':
     asyncio.run(main())
