@@ -5,6 +5,7 @@ import logging
 from argparse import Namespace
 from asyncio import Queue
 from asyncio.streams import StreamReader, StreamWriter
+from dataclasses import dataclass
 
 import aiofiles
 from configargparse import ArgumentParser
@@ -12,6 +13,15 @@ from configargparse import ArgumentParser
 import gui
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ChatQueue:
+    messages: Queue = Queue()
+    sending: Queue = Queue()
+    status_updates: Queue = Queue()
+    history: Queue = Queue()
+    errors: Queue = Queue()
 
 
 def parse_cli_args() -> ArgumentParser:
@@ -102,42 +112,38 @@ async def send_message(reader, writer, message):
 async def run_sender_connection(
         reader: StreamReader,
         writer: StreamWriter,
-        sending_queue: Queue
+        queue: Queue
 ):
     while True:
-        message = await sending_queue.get()
+        message = await queue.get()
         await send_message(reader, writer, message)
 
 
-async def main():
-    logging.basicConfig(
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.DEBUG,
-        filename='read_chat.log',
+async def run_tasks(
+        reader: StreamReader,
+        writer: StreamWriter,
+        config: Namespace,
+):
+    gui_task = gui.draw(
+        ChatQueue.messages,
+        ChatQueue.sending,
+        ChatQueue.status_updates,
     )
-
-    config = parse_cli_args().parse_args()
-
-    messages_queue = asyncio.Queue()
-    sending_queue = asyncio.Queue()
-    status_updates_queue = asyncio.Queue()
-    history_queue = asyncio.Queue()
-    error_queue = asyncio.Queue()
-
-    logger.debug(config)
-
-    sender_reader, sender_writer = await asyncio.open_connection(
-        config.sender_host,
-        config.sender_port,
+    receiving_messages_task = run_receiver_connection(
+        ChatQueue.messages,
+        ChatQueue.history,
+        config,
     )
-
-    gui_task = gui.draw(messages_queue, sending_queue, status_updates_queue)
-    receiving_messages_task = run_receiver_connection(messages_queue, history_queue, config)
-    saving_history_task = save_messages(history_queue, config.history)
-    sending_messages_task = run_sender_connection(sender_reader, sender_writer, sending_queue)
-    error_task = gui.show_message_box(error_queue)
-
-    await authorize(sender_reader, sender_writer, error_queue, config.account_hash)
+    saving_history_task = save_messages(
+        ChatQueue.history,
+        config.history,
+    )
+    sending_messages_task = run_sender_connection(
+        reader,
+        writer,
+        ChatQueue.sending,
+    )
+    error_task = gui.show_message_box(ChatQueue.errors)
 
     await asyncio.gather(
         sending_messages_task,
@@ -147,6 +153,24 @@ async def main():
         error_task,
     )
 
+
+async def main():
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.DEBUG,
+        filename='technical.log',
+    )
+
+    config = parse_cli_args().parse_args()
+    logger.debug(config)
+
+    sender_reader, sender_writer = await asyncio.open_connection(
+        config.sender_host,
+        config.sender_port,
+    )
+
+    await authorize(sender_reader, sender_writer, ChatQueue.errors, config.account_hash)
+    await run_tasks(sender_reader, sender_writer, config)
 
 if __name__ == '__main__':
     asyncio.run(main())
