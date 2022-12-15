@@ -143,7 +143,8 @@ class InvalidTokenException(Exception):
 async def update_error_box(queue):
     root = tk.Tk()
     root.withdraw()
-    root.after(0, root.destroy())
+    root.update()
+    root.after(1000, root.destroy())
     while True:
         message = await queue.get()
         if messagebox.showerror('Error', message):
