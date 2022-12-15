@@ -14,10 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 def parse_cli_args() -> ArgumentParser:
-    parser = ArgumentParser(default_config_files=['./reader_config.cfg'])
-    parser.add('--host', help='Chat host')
-    parser.add('--port', help='Chat port')
+    parser = ArgumentParser(default_config_files=['./chat_config.cfg'])
+    parser.add('--receiver_host', help='Chat host')
+    parser.add('--receiver_port', help='Chat port')
     parser.add('--history', help='Where to save chat history')
+    parser.add('--sender_host', help='Chat host')
+    parser.add('--sender_port', help='Chat port')
+    parser.add('--nickname', help='Preferred nickname')
     return parser
 
 
@@ -28,7 +31,7 @@ async def connect_to_chat(
 ):
     await read_messages_from_history(chat_queue, config.history)
     reader, writer = await asyncio.open_connection(
-        config.host, config.port,
+        config.receiver_host, config.receiver_port,
     )
     while True:
         message = await get_message(reader)
