@@ -1,6 +1,8 @@
 import asyncio
 import datetime
 import logging
+from asyncio import Queue
+from asyncio.streams import StreamReader
 
 import aiofiles
 import configargparse
@@ -18,26 +20,28 @@ def parse_cli_args():
     return parser
 
 
-async def connect_to_chat(queue: asyncio.Queue, reader: asyncio.streams.StreamReader, history_location: str):
-    await read_messages_from_history(queue, history_location)
+async def connect_to_chat(chat_queue: Queue, log_queue: Queue, reader: StreamReader, history_location: str):
+    await read_messages_from_history(chat_queue, history_location)
     while True:
         message = await get_message(reader)
-        queue.put_nowait(message)
-        await save_messages(history_location, message)
+        chat_queue.put_nowait(message)
+        log_queue.put_nowait(message)
 
 
-async def save_messages(path: str, message: str):
-    async with aiofiles.open(path, mode='a', encoding='utf-8') as file:
-        await file.writelines(message)
+async def save_messages(queue: Queue, path):
+    while True:
+        async with aiofiles.open(path, mode='a', encoding='utf-8') as file:
+            message = await queue.get()
+            await file.writelines(message)
 
 
-async def read_messages_from_history(queue: asyncio.Queue, path: str):
+async def read_messages_from_history(queue: Queue, path: str):
     async with aiofiles.open(path, mode='r', encoding='utf-8') as file:
         async for message in file:
             queue.put_nowait(message)
 
 
-async def get_message(reader: asyncio.streams.StreamReader):
+async def get_message(reader: StreamReader):
     chat_message = await reader.readline()
     message_time = datetime.datetime.now().strftime('%d.%m.%y %H:%M')
     decoded_message = chat_message.decode()
@@ -56,6 +60,7 @@ async def main():
     messages_queue = asyncio.Queue()
     sending_queue = asyncio.Queue()
     status_updates_queue = asyncio.Queue()
+    history_queue = asyncio.Queue()
 
     logger.debug('Connecting to chat')
 
@@ -69,9 +74,10 @@ async def main():
     )
 
     gui_task = gui.draw(messages_queue, sending_queue, status_updates_queue)
-    sending_messages_task = connect_to_chat(messages_queue, reader, history_location)
+    sending_messages_task = connect_to_chat(messages_queue, history_queue, reader, history_location)
+    saving_history_task = save_messages(history_queue, history_location)
 
-    await asyncio.gather(gui_task, sending_messages_task)
+    await asyncio.gather(gui_task, sending_messages_task, saving_history_task)
 
 
 if __name__ == '__main__':
