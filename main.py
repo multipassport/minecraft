@@ -39,14 +39,17 @@ def parse_cli_args() -> ArgumentParser:
 async def run_receiver_connection(
         chat_queue: Queue,
         log_queue: Queue,
+        status_queue: Queue,
         config: Namespace,
 ):
     logger.debug('Connecting to receiver')
+    status_queue.put_nowait(gui.ReadConnectionStateChanged.INITIATED)
     await read_messages_from_history(chat_queue, config.history)
     reader, writer = await asyncio.open_connection(
         config.receiver_host,
         config.receiver_port,
     )
+    status_queue.put_nowait(gui.ReadConnectionStateChanged.ESTABLISHED)
     while True:
         message = await get_message(reader)
         chat_queue.put_nowait(message)
@@ -76,7 +79,8 @@ async def get_message(reader: StreamReader) -> str:
 async def authorize(
         reader: StreamReader,
         writer: StreamWriter,
-        queue: Queue,
+        error_queue: Queue,
+        status_queue: Queue,
         account_hash: str
 ):
     logger.debug('Authorizing')
@@ -89,11 +93,15 @@ async def authorize(
     await writer.drain()
 
     server_reply_json = await reader.readline()
-    logger.debug(server_reply_json.decode())
+    decoded_reply = json.loads(server_reply_json)
+    logger.debug(decoded_reply)
 
-    if not json.loads(server_reply_json):
+    if not decoded_reply:
         logger.error('Invalid token')
-        queue.put_nowait('Неизвестный токен. Проверьте его или зарегистрируйте заново.')
+        error_queue.put_nowait('Неизвестный токен. Проверьте его или зарегистрируйте заново.')
+
+    nickname = decoded_reply.get('nickname')
+    status_queue.put_nowait(gui.NicknameReceived(nickname))
 
 
 async def send_message(
@@ -113,7 +121,7 @@ async def send_message(
     logger.debug(server_reply.decode())
 
 
-async def run_sender_connection(
+async def run_sending_queue(
         reader: StreamReader,
         writer: StreamWriter,
         queue: Queue
@@ -121,6 +129,19 @@ async def run_sender_connection(
     while True:
         message = await queue.get()
         await send_message(reader, writer, message)
+
+
+async def run_sender_connection(
+        queue: Queue,
+        config: Namespace,
+):
+    queue.put_nowait(gui.SendingConnectionStateChanged.INITIATED)
+    reader, writer = await asyncio.open_connection(
+        config.sender_host,
+        config.sender_port,
+    )
+    queue.put_nowait(gui.SendingConnectionStateChanged.ESTABLISHED)
+    return reader, writer
 
 
 async def run_tasks(
@@ -137,13 +158,14 @@ async def run_tasks(
     receiving_messages_task = run_receiver_connection(
         chat_queue.messages,
         chat_queue.history,
+        chat_queue.status_updates,
         config,
     )
     saving_history_task = save_messages(
         chat_queue.history,
         config.history,
     )
-    sending_messages_task = run_sender_connection(
+    sending_messages_task = run_sending_queue(
         reader,
         writer,
         chat_queue.sending,
@@ -169,13 +191,16 @@ async def main():
     config = parse_cli_args().parse_args()
     logger.debug(config)
 
-    sender_reader, sender_writer = await asyncio.open_connection(
-        config.sender_host,
-        config.sender_port,
-    )
     chat_queue = ChatQueue()
+    sender_reader, sender_writer = await run_sender_connection(chat_queue.status_updates, config)
 
-    await authorize(sender_reader, sender_writer, chat_queue.errors, config.account_hash)
+    await authorize(
+        sender_reader,
+        sender_writer,
+        chat_queue.errors,
+        chat_queue.status_updates,
+        config.account_hash,
+    )
     await run_tasks(sender_reader, sender_writer, config, chat_queue)
 
 
